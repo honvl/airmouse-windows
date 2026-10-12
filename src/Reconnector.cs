@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Windows.Forms;
 using Windows.Devices.Bluetooth;
@@ -44,6 +45,10 @@ namespace AirMouse
     {
         /// AirMouse's companion link service: tells the paired iPhone apart from other devices
         public static readonly Guid LinkService = new Guid("fb749375-7d73-4541-a1c1-5c4858d09521");
+        /// the link's Control characteristic: an op byte and its argument (ios/.../CompanionLink.swift)
+        static readonly Guid LinkControl = new Guid("fb749377-7d73-4541-a1c1-5c4858d09521");
+        const byte OpName = 0x03;
+        const byte OpSystem = 0x04;
         public static readonly Guid HidService = new Guid("00001812-0000-1000-8000-00805f9b34fb");
         /// Apple's Continuity service, on every iPhone: worth a closer look when no pairing shows AirMouse
         static readonly Guid AppleContinuity = new Guid("d0611e78-bbb4-4591-a5f8-487910ae4366");
@@ -280,6 +285,18 @@ namespace AirMouse
             }
             var handler = StateChanged;
             if (handler != null) handler(state);
+            if (state == LinkState.Ready) SayHello();
+        }
+
+        /// AirMouse just came up (or back): tell it this is a Windows PC and what it's called. Off
+        /// this thread, so a phone that doesn't answer can't hold up reconnecting
+        void SayHello()
+        {
+            string target = address;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                if (Probe.Run("hello", target) != Probe.Found) Log("couldn't tell the iPhone this is Windows");
+            });
         }
 
         void Attach(ulong found)
@@ -388,6 +405,42 @@ namespace AirMouse
                 });
                 return outcome;
             }
+        }
+
+        /// Writes this PC's name and "windows" to the companion link's Control characteristic, over
+        /// the same Bluetooth link Windows takes the mouse on, so AirMouse names the PC and lays its
+        /// keyboard out with Ctrl, Win and Alt
+        public static int Hello(ulong found)
+        {
+            using (var target = Await(BluetoothLEDevice.FromBluetoothAddressAsync(found)))
+            {
+                if (target == null) return Probe.Failed;
+                var services = Await(target.GetGattServicesForUuidAsync(LinkService, BluetoothCacheMode.Uncached));
+                if (services.Status != GattCommunicationStatus.Success) return Probe.Failed;
+                var service = services.Services.FirstOrDefault();
+                if (service == null) return Probe.NotFound;
+                using (service)
+                {
+                    var characteristics = Await(service.GetCharacteristicsForUuidAsync(LinkControl, BluetoothCacheMode.Uncached));
+                    var control = characteristics.Status == GattCommunicationStatus.Success
+                        ? characteristics.Characteristics.FirstOrDefault()
+                        : null;
+                    if (control == null) return Probe.NotFound;
+                    bool named = Write(control, OpName, Environment.MachineName);
+                    bool told = Write(control, OpSystem, "windows");
+                    return named && told ? Probe.Found : Probe.Failed;
+                }
+            }
+        }
+
+        static bool Write(GattCharacteristic control, byte op, string argument)
+        {
+            byte[] text = System.Text.Encoding.UTF8.GetBytes(argument);
+            byte[] value = new byte[1 + text.Length];
+            value[0] = op;
+            Array.Copy(text, 0, value, 1, text.Length);
+            var result = Await(control.WriteValueWithResultAsync(value.AsBuffer(), GattWriteOption.WriteWithResponse));
+            return result.Status == GattCommunicationStatus.Success;
         }
 
         static bool Connect(BluetoothLEDevice target, Func<bool> then)
@@ -524,6 +577,7 @@ namespace AirMouse
                 {
                     case "find": return Reconnector.Find() ? Found : NotFound;
                     case "refresh": return Reconnector.Refresh(Convert.ToUInt64(args[2], 16));
+                    case "hello": return Reconnector.Hello(Convert.ToUInt64(args[2], 16));
                 }
             }
             catch (Exception e)
