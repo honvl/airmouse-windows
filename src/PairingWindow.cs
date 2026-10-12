@@ -33,6 +33,9 @@ namespace AirMouse
             "You can also pair in Bluetooth settings: Add device > Bluetooth. If AirMouse isn't listed there, " +
             "set Bluetooth devices discovery to Advanced under Bluetooth & devices > Devices.";
 
+        /// the DPI the window's text is drawn at; Control.DeviceDpi says 96 unless an app config
+        /// turns on WinForms' DPI handling, which a lone exe can't ship
+        readonly float dpi;
         readonly Label heading;
         readonly Label body;
         readonly Label code;
@@ -64,6 +67,11 @@ namespace AirMouse
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = SystemFonts.MessageBoxFont;
             AutoScaleMode = AutoScaleMode.None;
+            // the screen's, not the form's: making the form's handle this early would skip CenterScreen
+            using (var graphics = Graphics.FromHwnd(IntPtr.Zero))
+            {
+                dpi = graphics.DpiX;
+            }
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -464,7 +472,7 @@ namespace AirMouse
 
         int Px(int dips)
         {
-            return (int)Math.Round(dips * DeviceDpi / 96.0);
+            return (int)Math.Round(dips * dpi / 96.0);
         }
 
         [DllImport("user32.dll")]
