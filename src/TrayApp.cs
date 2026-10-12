@@ -71,6 +71,7 @@ namespace AirMouse
             showWait = ThreadPool.RegisterWaitForSingleObject(showEvent, (o, t) => ui.Post(_ => Balloon("AirMouse", status), null), null, -1, false);
 
             link.StateChanged += state => ui.Post(_ => Show(state), null);
+            link.RestartNeeded += () => ui.Post(_ => Restart(), null);
             link.Start();
             if (welcome)
             {
@@ -98,6 +99,13 @@ namespace AirMouse
                 explainedPairing = true;
                 Balloon("Pair your iPhone", "Open AirMouse on the iPhone and tap Pair a new device, then add AirMouse in Bluetooth settings. Click here to open them.");
             }
+        }
+
+        /// hands over to a fresh copy of the app, which waits for this one to let go
+        void Restart()
+        {
+            Process.Start(Application.ExecutablePath, "--restarted");
+            ExitThread();
         }
 
         void Balloon(string title, string text)
