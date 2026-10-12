@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Microsoft Store package (see Packaged.cs). build.ps1 fills in Version from src\Program.cs.
+  Identity Name and Publisher, and PublisherDisplayName, must match Partner Center's
+  Product management > Product identity for the reserved app; Properties/DisplayName must be the
+  reserved name. The Store re-signs the package, so it's built unsigned.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap5 rescap">
+
+  <Identity Name="AirMouse.Windows" Publisher="CN=AirMouse" Version="0.0.0.0" ProcessorArchitecture="x64"/>
+
+  <Properties>
+    <DisplayName>AirMouse for Windows</DisplayName>
+    <PublisherDisplayName>AirMouse</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0"/>
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="AirMouse" Executable="AirMouse.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="AirMouse"
+        Description="Pairs the AirMouse iPhone app as a Bluetooth mouse and keeps it connected"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"/>
+      <Extensions>
+        <!-- starts with Windows from the first launch on; the tray menu turns it off and on -->
+        <uap5:Extension Category="windows.startupTask" Executable="AirMouse.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask TaskId="AirMouseStartup" Enabled="true" DisplayName="AirMouse"/>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust"/>
+    <DeviceCapability Name="bluetooth"/>
+  </Capabilities>
+</Package>

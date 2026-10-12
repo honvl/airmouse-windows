@@ -1,4 +1,5 @@
-# Builds AirMouse.exe on every push; a v* tag also publishes it as a GitHub release
+# Builds AirMouse.exe and the Microsoft Store package (AirMouse.msix) on every push; a v* tag also
+# publishes the exe as a GitHub release. The msix goes to Partner Center from the run's artifacts.
 name: Build
 
 on:
@@ -27,6 +28,10 @@ jobs:
         with:
           name: AirMouse
           path: dist/AirMouse.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: AirMouse-msix
+          path: dist/AirMouse.msix
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash

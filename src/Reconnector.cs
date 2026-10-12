@@ -48,8 +48,9 @@ namespace AirMouse
             "System.Devices.InterfaceClassGuid:=\"{4D1E55B2-F16F-11CF-88CB-001111000030}\" AND " +
             "System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
 
-        public static readonly string DataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirMouse");
+        public static readonly string DataFolder = Packaged.IsPackaged
+            ? Packaged.DataFolder
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirMouse");
         public static readonly string LogFile = Path.Combine(DataFolder, "airmouse.log");
         static readonly string DeviceFile = Path.Combine(DataFolder, "device.txt");
 

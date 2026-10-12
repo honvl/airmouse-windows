@@ -29,10 +29,12 @@ namespace AirMouse
             get { return string.Equals(Path.GetFullPath(Application.ExecutablePath), InstalledExe, StringComparison.OrdinalIgnoreCase); }
         }
 
+        /// the Run key, or for the Store copy its startup task
         public static bool StartsWithWindows
         {
             get
             {
+                if (Packaged.IsPackaged) return Packaged.StartsWithWindows;
                 using (var key = Registry.CurrentUser.OpenSubKey(RunKey))
                 {
                     return key != null && key.GetValue(RunValue) != null;
@@ -40,6 +42,11 @@ namespace AirMouse
             }
             set
             {
+                if (Packaged.IsPackaged)
+                {
+                    Packaged.StartsWithWindows = value;
+                    return;
+                }
                 using (var key = Registry.CurrentUser.CreateSubKey(RunKey))
                 {
                     if (value) key.SetValue(RunValue, Quote(InstalledExe));

@@ -29,11 +29,11 @@ namespace AirMouse
         readonly bool welcome;
         string status = "Starting";
         bool explainedPairing;
-        /// the last balloon offered pairing, so clicking it opens the pairing window
-        bool balloonPairs;
+        /// what clicking the last balloon does, if anything
+        Action balloonClick;
         Process pairing;
 
-        public TrayApp(bool welcome)
+        public TrayApp(bool welcome, bool downloadedCopy)
         {
             this.welcome = welcome;
             var menu = new ContextMenuStrip();
@@ -60,7 +60,7 @@ namespace AirMouse
             };
             tray.BalloonTipClicked += (s, e) =>
             {
-                if (balloonPairs) Pair();
+                if (balloonClick != null) balloonClick();
             };
 
             // another copy (the installer, the uninstaller, a second launch) talks to this one through these
@@ -72,7 +72,12 @@ namespace AirMouse
             link.StateChanged += state => ui.Post(_ => Show(state), null);
             link.RestartNeeded += () => ui.Post(_ => Restart(), null);
             link.Start();
-            if (welcome)
+            if (downloadedCopy)
+            {
+                Balloon("Remove the older AirMouse", "This copy from the Microsoft Store replaces the AirMouse.exe you downloaded. Click here to remove that one in Installed apps.",
+                    () => Open("ms-settings:appsfeatures"));
+            }
+            else if (welcome)
             {
                 Balloon("AirMouse is running", "It lives here in the notification area and keeps your iPhone connected as a mouse.");
             }
@@ -102,8 +107,7 @@ namespace AirMouse
                     Pair();
                     return;
                 }
-                Balloon("Pair your iPhone", "AirMouse isn't paired with this PC yet. Click here to pair it.");
-                balloonPairs = true;
+                Balloon("Pair your iPhone", "AirMouse isn't paired with this PC yet. Click here to pair it.", Pair);
             }
         }
 
@@ -134,9 +138,9 @@ namespace AirMouse
             ExitThread();
         }
 
-        void Balloon(string title, string text)
+        void Balloon(string title, string text, Action click = null)
         {
-            balloonPairs = false;
+            balloonClick = click;
             tray.ShowBalloonTip(5000, title, text, ToolTipIcon.None);
         }
 
