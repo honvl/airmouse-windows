@@ -37,7 +37,7 @@ It needs an iPhone with the AirMouse app, and a PC with Bluetooth.
 
 ## Search terms
 
-AirMouse, iPhone mouse, Bluetooth mouse, remote, trackpad, keyboard, iPhone
+AirMouse, iPhone mouse, Bluetooth mouse, remote, trackpad, keyboard, mouse
 
 ## Screenshots
 
@@ -48,6 +48,11 @@ PrintWindow (so nothing else on the desktop shows) and set on a background with 
 2. `2-code.png`: the code to check on both screens
 3. `3-paired.png`: paired, the iPhone working as a mouse and keyboard
 4. `4-menu.png`: the notification-area menu, connected
+
+## Logos
+
+`listing-art/box-art-1080.png` (1:1 box art, the Store's main logo when there's no 9:16 poster art)
+and `listing-art/tile-300.png` (1:1 app tile icon), from `assets/make_icons.py`.
 
 ## Notes for certification
 

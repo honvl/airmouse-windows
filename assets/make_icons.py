@@ -1,6 +1,7 @@
 """Builds the Windows icons from the iPhone app icon (icon-1024.png in the iPhone app's
 AppIcon.appiconset): AirMouse.ico (connected), AirMouseIdle.ico (faded, for every other state),
-and the Microsoft Store package's tile and list images in msix/Assets.
+the Microsoft Store package's tile and list images in msix/Assets, and the Store listing's logos
+in msix/listing-art.
 
     python3 assets/make_icons.py path/to/icon-1024.png
 """
@@ -12,6 +13,7 @@ from PIL import Image, ImageDraw, ImageEnhance
 SOURCE = Path(sys.argv[1])
 HERE = Path(__file__).parent
 MSIX = HERE.parent / "msix" / "Assets"
+LISTING = HERE.parent / "msix" / "listing-art"
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 # below this the dark remote fades into its square, so the notification area and other small spots
 # get a closer crop around the remote, the signal and the cursor
@@ -55,3 +57,8 @@ for scale in (100, 150, 200):
 for size in (16, 24, 32, 48, 256):
     icon(size).save(MSIX / f"Square44x44Logo.targetsize-{size}.png")
     icon(size).save(MSIX / f"Square44x44Logo.targetsize-{size}_altform-unplated.png")
+
+# the Store listing shows these instead of the package's small logo: 1:1 box art and the app tile
+LISTING.mkdir(parents=True, exist_ok=True)
+icon(1080).save(LISTING / "box-art-1080.png")
+icon(300).save(LISTING / "tile-300.png")
