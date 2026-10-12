@@ -54,7 +54,7 @@ namespace AirMouse
             if (!quiet)
             {
                 var answer = MessageBox.Show(
-                    "AirMouse for Windows keeps your iPhone connected as a mouse, even after the AirMouse app restarts.\n\n" +
+                    "AirMouse for Windows pairs your iPhone as a mouse and keeps it connected, even after the AirMouse app restarts.\n\n" +
                     "It installs for your account only, lives in the notification area, and starts when you sign in.",
                     "Install " + DisplayName, MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
                 if (answer != DialogResult.OK) return;

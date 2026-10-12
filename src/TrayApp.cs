@@ -14,11 +14,6 @@ namespace AirMouse
     {
         const string QuitEventName = @"Local\AirMouseForWindows.Quit";
         const string ShowEventName = @"Local\AirMouseForWindows.Show";
-        const string PairingSteps =
-            "1. On the iPhone, open AirMouse, tap the connection status at the top, then Pair a new device.\n" +
-            "2. On Windows, open Settings > Bluetooth & devices > Add device > Bluetooth.\n" +
-            "   Don't see AirMouse? Set \"Bluetooth devices discovery\" to Advanced in Bluetooth & devices > Devices.\n" +
-            "3. Pick AirMouse and confirm the code on both screens.";
 
         readonly Reconnector link = new Reconnector();
         readonly SynchronizationContext ui = new WindowsFormsSynchronizationContext();
@@ -31,18 +26,23 @@ namespace AirMouse
         readonly EventWaitHandle showEvent;
         readonly RegisteredWaitHandle quitWait;
         readonly RegisteredWaitHandle showWait;
+        readonly bool welcome;
         string status = "Starting";
         bool explainedPairing;
+        /// the last balloon offered pairing, so clicking it opens the pairing window
+        bool balloonPairs;
+        Process pairing;
 
         public TrayApp(bool welcome)
         {
+            this.welcome = welcome;
             var menu = new ContextMenuStrip();
             statusItem = new ToolStripMenuItem(status) { Enabled = false };
             menu.Items.Add(statusItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Reconnect now", null, (s, e) => link.RefreshNow());
+            menu.Items.Add("Pair with iPhone…", null, (s, e) => Pair());
             menu.Items.Add("Bluetooth settings", null, (s, e) => Open("ms-settings:bluetooth"));
-            menu.Items.Add("How to pair", null, (s, e) => MessageBox.Show(PairingSteps, "Pair your iPhone with AirMouse"));
             menu.Items.Add(new ToolStripSeparator());
             startItem = new ToolStripMenuItem("Start when I sign in", null, (s, e) => ToggleStart());
             startItem.Checked = Installer.StartsWithWindows;
@@ -60,8 +60,7 @@ namespace AirMouse
             };
             tray.BalloonTipClicked += (s, e) =>
             {
-                if (!explainedPairing) return;
-                Open("ms-settings:bluetooth");
+                if (balloonPairs) Pair();
             };
 
             // another copy (the installer, the uninstaller, a second launch) talks to this one through these
@@ -97,7 +96,34 @@ namespace AirMouse
             if (state == LinkState.NotPaired && !explainedPairing)
             {
                 explainedPairing = true;
-                Balloon("Pair your iPhone", "Open AirMouse on the iPhone and tap Pair a new device, then add AirMouse in Bluetooth settings. Click here to open them.");
+                // just installed: straight to pairing
+                if (welcome)
+                {
+                    Pair();
+                    return;
+                }
+                Balloon("Pair your iPhone", "AirMouse isn't paired with this PC yet. Click here to pair it.");
+                balloonPairs = true;
+            }
+        }
+
+        /// the pairing window, in its own copy of the exe; the link looks again once it closes
+        void Pair()
+        {
+            if (pairing != null && !pairing.HasExited)
+            {
+                PairingWindow.BringForward(pairing);
+                return;
+            }
+            try
+            {
+                pairing = Process.Start(Application.ExecutablePath, "--pair");
+                pairing.EnableRaisingEvents = true;
+                pairing.Exited += (s, e) => link.LookAgain();
+            }
+            catch (Exception e)
+            {
+                Reconnector.Log("couldn't open the pairing window: " + e.Message);
             }
         }
 
@@ -110,6 +136,7 @@ namespace AirMouse
 
         void Balloon(string title, string text)
         {
+            balloonPairs = false;
             tray.ShowBalloonTip(5000, title, text, ToolTipIcon.None);
         }
 
@@ -165,7 +192,12 @@ namespace AirMouse
                 if (other.Id == self.Id || other.SessionId != self.SessionId) continue;
                 try
                 {
-                    if (!other.WaitForExit(5000)) other.Kill();
+                    // the pairing window doesn't listen for quit; a killed copy still holds the exe a moment
+                    if (!other.WaitForExit(5000))
+                    {
+                        other.Kill();
+                        other.WaitForExit(5000);
+                    }
                 }
                 catch (Win32Exception)
                 {

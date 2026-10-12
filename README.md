@@ -1,7 +1,7 @@
 # AirMouse for Windows
 
 A small companion app for Windows PCs that use the AirMouse iPhone app as a Bluetooth mouse. It
-lives in the notification area and keeps the iPhone connected.
+pairs the iPhone, then lives in the notification area and keeps it connected.
 
 **[Download the latest release](https://github.com/honvl/airmouse-windows/releases/latest)**
 
@@ -20,22 +20,30 @@ which is all Windows needs. It finds the iPhone by AirMouse's companion link ser
 has already gone stale, it connects to paired Apple devices and looks again. It backs off while the
 app is closed.
 
+It also pairs the iPhone itself. Bluetooth settings' Add device list leaves AirMouse out unless
+"Bluetooth devices discovery" is set to Advanced. The pairing window instead listens for devices
+advertising a mouse and keeps the one that publishes AirMouse's link service. It then pairs with a
+code you check on both screens (`DeviceInformationCustomPairing`, numeric comparison), the same way
+Settings does.
+
 ## Install
 
-Pair the PC with AirMouse first: on the iPhone, open AirMouse, tap the connection status at the
-top, then **Pair a new device**. On Windows, go to Settings > Bluetooth & devices > Add device >
-Bluetooth.
-
-Then download `AirMouse.exe` and run it. It asks once, then installs for your account only, without
+Download `AirMouse.exe` and run it. It asks once, then installs for your account only, without
 admin rights:
 
 - the app goes to `%LOCALAPPDATA%\Programs\AirMouse`
 - it starts when you sign in, and you can turn that off from its menu
 - it appears in Start, and you remove it from Settings > Apps > Installed apps
 
+If the PC isn't paired with AirMouse yet, the pairing window opens. On the iPhone, open AirMouse,
+tap the connection status at the top, then **Pair a new device**. When both screens show the same
+code, tap Pair on each. To pair again later, choose **Pair with iPhone…** from the app's menu. You can
+also pair in Settings > Bluetooth & devices > Add device > Bluetooth, with "Bluetooth devices
+discovery" set to Advanced.
+
 Its icon is bright while Windows has the mouse, and faded otherwise. Click it to see what's going on,
-reconnect, open Bluetooth settings, or read how to pair. Running a newer `AirMouse.exe` updates
-it. For scripted installs:
+reconnect, pair, or open Bluetooth settings. Running a newer `AirMouse.exe` updates it. For
+scripted installs:
 
 ```
 AirMouse.exe --quiet                 install or update, no questions

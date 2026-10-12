@@ -1,6 +1,7 @@
 Download **AirMouse.exe** below and run it. It installs for your account only, with no admin
-rights, lives in the notification area, and keeps your iPhone connected as a mouse, even after the
-AirMouse app restarts.
+rights, pairs your iPhone (no need to find AirMouse in Bluetooth settings), lives in the
+notification area, and keeps your iPhone connected as a mouse, even after the AirMouse app
+restarts.
 
 The exe isn't code-signed yet, so Windows may say "Windows protected your PC". Choose
 **More info**, then **Run anyway**.

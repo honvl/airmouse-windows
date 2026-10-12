@@ -39,8 +39,8 @@ namespace AirMouse
     sealed class Reconnector
     {
         /// AirMouse's companion link service: tells the paired iPhone apart from other devices
-        static readonly Guid LinkService = new Guid("fb749375-7d73-4541-a1c1-5c4858d09521");
-        static readonly Guid HidService = new Guid("00001812-0000-1000-8000-00805f9b34fb");
+        public static readonly Guid LinkService = new Guid("fb749375-7d73-4541-a1c1-5c4858d09521");
+        public static readonly Guid HidService = new Guid("00001812-0000-1000-8000-00805f9b34fb");
         /// Apple's Continuity service, on every iPhone: worth a closer look when no pairing shows AirMouse
         static readonly Guid AppleContinuity = new Guid("d0611e78-bbb4-4591-a5f8-487910ae4366");
         /// enabled HID interfaces: AirMouse's mouse, keyboard and media keys show up here while Windows has them
@@ -75,6 +75,7 @@ namespace AirMouse
         // into the device
         volatile bool changed;
         volatile bool refreshRequested;
+        volatile bool lookRequested;
         volatile bool stopping;
 
         /// raised on the Bluetooth thread
@@ -99,6 +100,13 @@ namespace AirMouse
         public void RefreshNow()
         {
             refreshRequested = true;
+            wake.Set();
+        }
+
+        /// after the pairing window closes: pick up the iPhone it paired, if any, right away
+        public void LookAgain()
+        {
+            lookRequested = true;
             wake.Set();
         }
 
@@ -130,6 +138,11 @@ namespace AirMouse
 
         void Tick()
         {
+            if (lookRequested)
+            {
+                lookRequested = false;
+                nextSearch = DateTime.MinValue;
+            }
             if (device != null && !device.DeviceInformation.Pairing.IsPaired)
             {
                 Log("pairing removed; looking for the iPhone again");
@@ -137,9 +150,16 @@ namespace AirMouse
                 File.Delete(DeviceFile);
                 nextSearch = DateTime.MinValue;
             }
+            // the pairing window saved a different iPhone
+            ulong saved = Saved();
+            if (device != null && saved != 0 && saved.ToString("x12") != address)
+            {
+                Log("switching to the newly paired iPhone");
+                Release();
+            }
             if (device == null)
             {
-                ulong found = Saved();
+                ulong found = saved;
                 if (found == 0 && DateTime.Now >= nextSearch)
                 {
                     nextSearch = DateTime.Now + SearchInterval;
@@ -173,7 +193,7 @@ namespace AirMouse
                 Report(LinkState.Away);
                 return;
             }
-            if (!forced && MouseIsPresent())
+            if (!forced && HasMouse(address))
             {
                 Report(LinkState.Ready);
                 return;
@@ -190,7 +210,7 @@ namespace AirMouse
         }
 
         /// from Windows' device list alone, so it opens nothing on the device
-        bool MouseIsPresent()
+        public static bool HasMouse(string address)
         {
             var interfaces = Await(DeviceInformation.FindAllAsync(HidInterfaces));
             return interfaces.Any(d => d.Id.IndexOf("_" + address, StringComparison.OrdinalIgnoreCase) >= 0);
@@ -264,7 +284,7 @@ namespace AirMouse
             var apple = new List<string>();
             foreach (var info in paired)
             {
-                using (var candidate = Await(BluetoothLEDevice.FromIdAsync(info.Id)))
+                using (var candidate = Open(info.Id))
                 {
                     if (candidate == null) continue;
                     if (Has(candidate, LinkService, BluetoothCacheMode.Cached)) return Remember(candidate);
@@ -273,7 +293,7 @@ namespace AirMouse
             }
             foreach (var id in apple)
             {
-                using (var candidate = Await(BluetoothLEDevice.FromIdAsync(id)))
+                using (var candidate = Open(id))
                 {
                     if (candidate != null && Connect(candidate, () => Has(candidate, LinkService, BluetoothCacheMode.Uncached)))
                     {
@@ -282,6 +302,19 @@ namespace AirMouse
                 }
             }
             return false;
+        }
+
+        /// null for a pairing Windows can't open, such as one made through another Bluetooth adapter
+        static BluetoothLEDevice Open(string id)
+        {
+            try
+            {
+                return Await(BluetoothLEDevice.FromIdAsync(id));
+            }
+            catch (AggregateException)
+            {
+                return null;
+            }
         }
 
         /// re-reads the iPhone's services past Windows' cache; true if AirMouse's mouse is among them
@@ -307,7 +340,7 @@ namespace AirMouse
             }
         }
 
-        static bool Remember(BluetoothLEDevice found)
+        public static bool Remember(BluetoothLEDevice found)
         {
             string hex = found.BluetoothAddress.ToString("x12");
             Directory.CreateDirectory(DataFolder);
@@ -316,7 +349,7 @@ namespace AirMouse
             return true;
         }
 
-        static bool Has(BluetoothLEDevice target, Guid service, BluetoothCacheMode mode)
+        public static bool Has(BluetoothLEDevice target, Guid service, BluetoothCacheMode mode)
         {
             var result = Await(target.GetGattServicesAsync(mode));
             bool found = result.Status == GattCommunicationStatus.Success && result.Services.Any(s => s.Uuid == service);
@@ -327,10 +360,15 @@ namespace AirMouse
         // MARK: - helpers
 
         /// waits for a Windows Runtime call, but not forever
-        static T Await<T>(IAsyncOperation<T> operation)
+        public static T Await<T>(IAsyncOperation<T> operation)
+        {
+            return Await(operation, CallTimeout);
+        }
+
+        public static T Await<T>(IAsyncOperation<T> operation, TimeSpan limit)
         {
             var task = operation.AsTask();
-            if (task.Wait(CallTimeout)) return task.Result;
+            if (task.Wait(limit)) return task.Result;
             operation.Cancel();
             throw new TimeoutException("Bluetooth didn't answer");
         }
@@ -351,18 +389,25 @@ namespace AirMouse
 
         public static void Log(string message)
         {
-            try
+            string line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss ") + message + Environment.NewLine;
+            // the tray app, its probes and the pairing window share the file; one may have it open
+            for (int attempt = 0; attempt < 5; attempt++)
             {
-                Directory.CreateDirectory(DataFolder);
-                if (File.Exists(LogFile) && new FileInfo(LogFile).Length > 256 * 1024)
+                try
                 {
-                    File.Copy(LogFile, LogFile + ".old", true);
-                    File.Delete(LogFile);
+                    Directory.CreateDirectory(DataFolder);
+                    if (File.Exists(LogFile) && new FileInfo(LogFile).Length > 256 * 1024)
+                    {
+                        File.Copy(LogFile, LogFile + ".old", true);
+                        File.Delete(LogFile);
+                    }
+                    File.AppendAllText(LogFile, line);
+                    return;
                 }
-                File.AppendAllText(LogFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss ") + message + Environment.NewLine);
-            }
-            catch (IOException)
-            {
+                catch (IOException)
+                {
+                    Thread.Sleep(50);
+                }
             }
         }
     }
