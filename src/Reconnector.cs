@@ -143,8 +143,15 @@ namespace AirMouse
             {
                 lookRequested = false;
                 nextSearch = DateTime.MinValue;
+                // the window may have paired the same iPhone afresh, and a connection held from the
+                // old pairing doesn't carry over
+                if (device != null)
+                {
+                    Log("pairing window closed; connecting afresh");
+                    Release();
+                }
             }
-            if (device != null && !device.DeviceInformation.Pairing.IsPaired)
+            if (device != null && !StillPaired())
             {
                 Log("pairing removed; looking for the iPhone again");
                 Release();
@@ -208,6 +215,21 @@ namespace AirMouse
             retry = back ? FirstRetry : TimeSpan.FromTicks(Math.Min(retry.Ticks * 2, MaxRetry.Ticks));
             nextRefresh = DateTime.Now + retry;
             Report(back ? LinkState.Ready : LinkState.Waiting);
+        }
+
+        /// from Windows' device list: the device object's own pairing state is a snapshot from when
+        /// it was opened, so it never sees the pairing removed
+        bool StillPaired()
+        {
+            try
+            {
+                return Await(DeviceInformation.CreateFromIdAsync(device.DeviceId)).Pairing.IsPaired;
+            }
+            catch (AggregateException)
+            {
+                // gone from the list altogether
+                return false;
+            }
         }
 
         /// from Windows' device list alone, so it opens nothing on the device
