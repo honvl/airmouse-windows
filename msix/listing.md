@@ -41,8 +41,13 @@ AirMouse, iPhone mouse, Bluetooth mouse, remote, trackpad, keyboard, iPhone
 
 ## Screenshots
 
-At least one, 1366 x 768 or larger: the pairing window with a code, and the notification-area menu
-showing "Connected to your iPhone".
+`screenshots/`, 1600 x 900, in this order. They're the real windows on a 150% display, rendered with
+PrintWindow (so nothing else on the desktop shows) and set on a background with a caption:
+
+1. `1-pair.png`: the pairing window looking for the iPhone
+2. `2-code.png`: the code to check on both screens
+3. `3-paired.png`: paired, the iPhone working as a mouse and keyboard
+4. `4-menu.png`: the notification-area menu, connected
 
 ## Notes for certification
 
