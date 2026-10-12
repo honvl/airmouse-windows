@@ -6,9 +6,9 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("AirMouse for Windows")]
 [assembly: AssemblyDescription("Pairs the AirMouse iPhone app as a Bluetooth mouse and keeps it connected")]
 [assembly: AssemblyProduct("AirMouse")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
-[assembly: AssemblyInformationalVersion("1.2.0")]
+[assembly: AssemblyVersion("1.2.1.0")]
+[assembly: AssemblyFileVersion("1.2.1.0")]
+[assembly: AssemblyInformationalVersion("1.2.1")]
 
 namespace AirMouse
 {
@@ -18,17 +18,17 @@ namespace AirMouse
     ///
     ///   AirMouse.exe [--quiet]          install, or update an installed copy
     ///   AirMouse.exe --uninstall [--quiet]
-    ///   AirMouse.exe --pair              the pairing window (see PairingWindow)
+    ///   AirMouse.exe --pair [--again]    the pairing window (see PairingWindow)
     ///   AirMouse.exe --probe ...         Bluetooth work for the running copy (see Probe)
     static class Program
     {
-        public const string Version = "1.2.0";
+        public const string Version = "1.2.1";
 
         [STAThread]
         static int Main(string[] args)
         {
             if (Array.IndexOf(args, "--probe") == 0) return Probe.RunHere(args);
-            if (Array.IndexOf(args, "--pair") == 0) return PairingWindow.RunHere();
+            if (Array.IndexOf(args, "--pair") == 0) return PairingWindow.RunHere(args);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             bool quiet = Array.IndexOf(args, "--quiet") >= 0;

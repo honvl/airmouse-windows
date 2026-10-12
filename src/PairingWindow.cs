@@ -32,6 +32,11 @@ namespace AirMouse
         const string SettingsFallback =
             "You can also pair in Bluetooth settings: Add device > Bluetooth. If AirMouse isn't listed there, " +
             "set Bluetooth devices discovery to Advanced under Bluetooth & devices > Devices.";
+        /// Forget in AirMouse's own device list leaves the iPhone's system pairing in place; only
+        /// Settings removes it
+        static readonly string ForgetOnIPhone =
+            "On the iPhone, open Settings > Bluetooth, tap the info button next to " + Environment.MachineName +
+            ", then Forget This Device.";
 
         /// the DPI the window's text is drawn at; Control.DeviceDpi says 96 unless an app config
         /// turns on WinForms' DPI handling, which a lone exe can't ship
@@ -47,22 +52,25 @@ namespace AirMouse
         CancellationTokenSource attempt;
         /// the code question the Bluetooth thread is waiting on, if any
         Answer question;
+        /// opened because the pairing is out of sync (AirMouse.exe --pair --again): start by fixing it
+        readonly bool again;
 
         public bool Paired { get; private set; }
 
-        public static int RunHere()
+        public static int RunHere(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            using (var window = new PairingWindow())
+            using (var window = new PairingWindow(Array.IndexOf(args, "--again") >= 0))
             {
                 Application.Run(window);
                 return window.Paired ? 0 : 1;
             }
         }
 
-        PairingWindow()
+        PairingWindow(bool again)
         {
+            this.again = again;
             Text = "Pair your iPhone with AirMouse";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = SystemFonts.MessageBoxFont;
@@ -119,7 +127,17 @@ namespace AirMouse
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            Search();
+            if (again)
+            {
+                Present("Pair your iPhone again",
+                    "Your iPhone kept an old pairing for this PC, so the two don't match anymore. " + ForgetOnIPhone +
+                    " Then click Continue.", null, null);
+                Buttons("Continue", StartOver, "Cancel", Close);
+            }
+            else
+            {
+                Search();
+            }
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
@@ -189,6 +207,37 @@ namespace AirMouse
         {
             Present("Pairing didn't finish", reason + "\n\n" + SettingsFallback, null, null);
             Buttons("Try again", Search, "Close", Close);
+        }
+
+        /// paired here, but the iPhone answers with its old pairing: see LinkState.OutOfSync
+        void OutOfSync()
+        {
+            Paired = false;
+            Present("Pairing didn't take",
+                "Windows paired, but your iPhone kept an old pairing for this PC, so the two can't talk. " +
+                ForgetOnIPhone + " Then click Try again.", null, null);
+            Buttons("Try again", StartOver, "Close", Close);
+            Activate();
+        }
+
+        /// removes this PC's side of the pairing, then pairs afresh
+        void StartOver()
+        {
+            if (attempt != null) attempt.Cancel();
+            Present("Pair your iPhone again", Steps, null, "Removing the old pairing on this PC…");
+            Buttons(null, null, "Cancel", Close);
+            new Thread(() =>
+            {
+                try
+                {
+                    Unpair();
+                }
+                catch (Exception e)
+                {
+                    Reconnector.Log("pairing: couldn't remove the old pairing: " + Reconnector.Describe(e));
+                }
+                Ui(Search);
+            }) { IsBackground = true, Name = "AirMouse unpairing" }.Start();
         }
 
         void Present(string title, string text, string pin, string progress)
@@ -389,14 +438,55 @@ namespace AirMouse
                 Present("Paired", "Windows is setting up your iPhone as a mouse and keyboard.", null, "Almost done…");
                 Buttons(null, null, "Close", Close);
             });
+            int churn = 0;
+            device.ConnectionStatusChanged += (d, o) => Interlocked.Increment(ref churn);
             var setup = DateTime.Now + SetupLimit;
             bool ready;
             while (!(ready = Reconnector.HasMouse(hex)) && DateTime.Now < setup && !token.IsCancellationRequested)
             {
                 Thread.Sleep(1000);
             }
-            Reconnector.Log(ready ? "pairing: Windows has the mouse" : "pairing: no mouse yet");
-            Ui(() => Done(name, false, ready));
+            if (ready)
+            {
+                Reconnector.Log("pairing: Windows has the mouse");
+                Ui(() => Done(name, false, true));
+                return;
+            }
+            // a one-sided pairing: the link keeps dropping, and the iPhone's services can't be read
+            Ui(() => Status("Checking the connection…"));
+            bool readable;
+            try
+            {
+                readable = Reconnector.Services(device, BluetoothCacheMode.Uncached) != null;
+            }
+            catch (TimeoutException)
+            {
+                readable = false;
+            }
+            catch (AggregateException)
+            {
+                readable = false;
+            }
+            Reconnector.Log("pairing: no mouse yet; " + churn + " connection changes, services " + (readable ? "readable" : "unreadable"));
+            if (churn >= 4 || !readable)
+            {
+                Ui(OutOfSync);
+                return;
+            }
+            Ui(() => Done(name, false, false));
+        }
+
+        /// this PC's side of the pairing with the iPhone the tray knows, if there is one
+        static void Unpair()
+        {
+            ulong saved = Reconnector.Saved();
+            if (saved == 0) return;
+            using (var device = Reconnector.Await(BluetoothLEDevice.FromBluetoothAddressAsync(saved)))
+            {
+                if (device == null || !device.DeviceInformation.Pairing.IsPaired) return;
+                var result = Reconnector.Await(device.DeviceInformation.Pairing.UnpairAsync(), PairLimit);
+                Reconnector.Log("pairing: removed this PC's pairing with " + saved.ToString("x12") + " (" + result.Status + ")");
+            }
         }
 
         static string Explain(DevicePairingResultStatus status)

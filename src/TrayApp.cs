@@ -29,6 +29,8 @@ namespace AirMouse
         readonly bool welcome;
         string status = "Starting";
         bool explainedPairing;
+        bool explainedOutOfSync;
+        LinkState current = LinkState.NotPaired;
         /// what clicking the last balloon does, if anything
         Action balloonClick;
         Process pairing;
@@ -41,7 +43,7 @@ namespace AirMouse
             menu.Items.Add(statusItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Reconnect now", null, (s, e) => link.RefreshNow());
-            menu.Items.Add("Pair with iPhone…", null, (s, e) => Pair());
+            menu.Items.Add("Pair with iPhone…", null, (s, e) => Pair(current == LinkState.OutOfSync));
             menu.Items.Add("Bluetooth settings", null, (s, e) => Open("ms-settings:bluetooth"));
             menu.Items.Add(new ToolStripSeparator());
             startItem = new ToolStripMenuItem("Start when I sign in", null, (s, e) => ToggleStart());
@@ -91,6 +93,7 @@ namespace AirMouse
                 case LinkState.Ready: status = "Connected to your iPhone"; break;
                 case LinkState.Waiting: status = "Open AirMouse on your iPhone"; break;
                 case LinkState.Away: status = "Looking for your iPhone"; break;
+                case LinkState.OutOfSync: status = "Pairing out of sync"; break;
                 default: status = "Not paired with AirMouse yet"; break;
             }
             statusItem.Text = status;
@@ -98,21 +101,30 @@ namespace AirMouse
             // NotifyIcon refuses tooltips longer than 63 characters
             tray.Text = tip.Length > 63 ? tip.Substring(0, 63) : tip;
             tray.Icon = state == LinkState.Ready ? readyIcon : idleIcon;
+            current = state;
+            if (state == LinkState.Ready) explainedOutOfSync = false;
+            if (state == LinkState.OutOfSync && !explainedOutOfSync)
+            {
+                explainedOutOfSync = true;
+                Balloon("Pair your iPhone again", "Your iPhone kept an old pairing for this PC, so the mouse can't connect. Click here to fix it.",
+                    () => Pair(true));
+            }
             if (state == LinkState.NotPaired && !explainedPairing)
             {
                 explainedPairing = true;
                 // just installed: straight to pairing
                 if (welcome)
                 {
-                    Pair();
+                    Pair(false);
                     return;
                 }
-                Balloon("Pair your iPhone", "AirMouse isn't paired with this PC yet. Click here to pair it.", Pair);
+                Balloon("Pair your iPhone", "AirMouse isn't paired with this PC yet. Click here to pair it.", () => Pair(false));
             }
         }
 
-        /// the pairing window, in its own copy of the exe; the link looks again once it closes
-        void Pair()
+        /// the pairing window, in its own copy of the exe; the link looks again once it closes.
+        /// again: the pairing is out of sync, so the window starts by fixing that
+        void Pair(bool again)
         {
             if (pairing != null && !pairing.HasExited)
             {
@@ -121,7 +133,7 @@ namespace AirMouse
             }
             try
             {
-                pairing = Process.Start(Application.ExecutablePath, "--pair");
+                pairing = Process.Start(Application.ExecutablePath, again ? "--pair --again" : "--pair");
                 pairing.EnableRaisingEvents = true;
                 pairing.Exited += (s, e) => link.LookAgain();
             }

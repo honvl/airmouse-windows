@@ -22,7 +22,11 @@ namespace AirMouse
         /// connected to the iPhone, but the AirMouse app isn't running
         Waiting,
         /// Windows has AirMouse's mouse
-        Ready
+        Ready,
+        /// paired here, but the iPhone kept an older pairing for this PC: the link keeps dropping
+        /// and the iPhone never answers. Only forgetting the PC on the iPhone and pairing again
+        /// fixes it
+        OutOfSync
     }
 
     /// Keeps Windows connected to the iPhone running AirMouse, so the mouse comes back by itself.
@@ -62,6 +66,11 @@ namespace AirMouse
         static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
         /// a healthy copy runs on a couple of dozen threads; far past that, something is stuck
         const int MaxThreads = 150;
+        /// a one-sided pairing connects and drops about every 10 s, and its services never come
+        /// back; a phone walking off or AirMouse closing does neither
+        static readonly TimeSpan ChurnWindow = TimeSpan.FromMinutes(1);
+        const int ChurnForOutOfSync = 6;
+        const int UnreadableForOutOfSync = 3;
 
         readonly AutoResetEvent wake = new AutoResetEvent(false);
         BluetoothLEDevice device;
@@ -72,6 +81,10 @@ namespace AirMouse
         DateTime nextRefresh = DateTime.MinValue;
         DateTime nextSearch = DateTime.MinValue;
         LinkState? reported;
+        /// when the connection came or went lately, from the Bluetooth callback
+        readonly Queue<DateTime> churn = new Queue<DateTime>();
+        /// refreshes in a row that couldn't read the iPhone's services at all
+        int unreadable;
         // set from Bluetooth callbacks and the tray, which must not wait on the loop or call back
         // into the device
         volatile bool changed;
@@ -171,7 +184,7 @@ namespace AirMouse
                 if (found == 0 && DateTime.Now >= nextSearch)
                 {
                     nextSearch = DateTime.Now + SearchInterval;
-                    if (Probe.Run("find") == 0) found = Saved();
+                    if (Probe.Run("find") == Probe.Found) found = Saved();
                 }
                 if (found == 0)
                 {
@@ -198,23 +211,37 @@ namespace AirMouse
                     Log("reconnect requested; starting the connection over");
                     Release();
                 }
-                Report(LinkState.Away);
+                Report(OutOfSync() ? LinkState.OutOfSync : LinkState.Away);
                 return;
             }
             if (!forced && HasMouse(address))
             {
+                unreadable = 0;
                 Report(LinkState.Ready);
                 return;
             }
             if (!forced && DateTime.Now < nextRefresh)
             {
-                Report(LinkState.Waiting);
+                Report(OutOfSync() ? LinkState.OutOfSync : LinkState.Waiting);
                 return;
             }
-            bool back = Probe.Run("refresh", address) == 0;
+            int outcome = Probe.Run("refresh", address);
+            bool back = outcome == Probe.Found;
+            unreadable = outcome == Probe.Failed ? unreadable + 1 : 0;
             retry = back ? FirstRetry : TimeSpan.FromTicks(Math.Min(retry.Ticks * 2, MaxRetry.Ticks));
             nextRefresh = DateTime.Now + retry;
-            Report(back ? LinkState.Ready : LinkState.Waiting);
+            Report(back ? LinkState.Ready : OutOfSync() ? LinkState.OutOfSync : LinkState.Waiting);
+        }
+
+        /// the link keeps dropping and the iPhone's services can't be read: see LinkState.OutOfSync
+        bool OutOfSync()
+        {
+            if (unreadable < UnreadableForOutOfSync) return false;
+            lock (churn)
+            {
+                while (churn.Count > 0 && DateTime.Now - churn.Peek() > ChurnWindow) churn.Dequeue();
+                return churn.Count >= ChurnForOutOfSync;
+            }
         }
 
         /// from Windows' device list: the device object's own pairing state is a snapshot from when
@@ -249,6 +276,7 @@ namespace AirMouse
                 case LinkState.Waiting: Log("connected; AirMouse isn't running"); break;
                 case LinkState.Away: Log("not connected; waiting for the iPhone"); break;
                 case LinkState.NotPaired: Log("no paired iPhone with AirMouse yet"); break;
+                case LinkState.OutOfSync: Log("pairing out of sync: the link keeps dropping and the iPhone doesn't answer"); break;
             }
             var handler = StateChanged;
             if (handler != null) handler(state);
@@ -262,6 +290,7 @@ namespace AirMouse
             // flags only: calling back into the device from its own callback can deadlock
             device.ConnectionStatusChanged += (d, o) =>
             {
+                lock (churn) churn.Enqueue(DateTime.Now);
                 changed = true;
                 wake.Set();
             };
@@ -283,9 +312,12 @@ namespace AirMouse
             session = null;
             device = null;
             reported = null;
+            unreadable = 0;
+            lock (churn) churn.Clear();
         }
 
-        static ulong Saved()
+        /// the iPhone the tray last attached to or the pairing window paired, 0 if none
+        public static ulong Saved()
         {
             ulong saved;
             if (File.Exists(DeviceFile) &&
@@ -340,12 +372,21 @@ namespace AirMouse
             }
         }
 
-        /// re-reads the iPhone's services past Windows' cache; true if AirMouse's mouse is among them
-        public static bool Refresh(ulong found)
+        /// re-reads the iPhone's services past Windows' cache: Probe.Found if AirMouse's mouse is
+        /// among them, NotFound if not (AirMouse isn't running), Failed if they couldn't be read
+        public static int Refresh(ulong found)
         {
             using (var target = Await(BluetoothLEDevice.FromBluetoothAddressAsync(found)))
             {
-                return target != null && Connect(target, () => Has(target, HidService, BluetoothCacheMode.Uncached));
+                if (target == null) return Probe.Failed;
+                int outcome = Probe.Failed;
+                Connect(target, () =>
+                {
+                    var services = Services(target, BluetoothCacheMode.Uncached);
+                    outcome = services == null ? Probe.Failed : services.Contains(HidService) ? Probe.Found : Probe.NotFound;
+                    return true;
+                });
+                return outcome;
             }
         }
 
@@ -374,10 +415,17 @@ namespace AirMouse
 
         public static bool Has(BluetoothLEDevice target, Guid service, BluetoothCacheMode mode)
         {
+            var services = Services(target, mode);
+            return services != null && services.Contains(service);
+        }
+
+        /// the device's service UUIDs, or null if it didn't answer
+        public static List<Guid> Services(BluetoothLEDevice target, BluetoothCacheMode mode)
+        {
             var result = Await(target.GetGattServicesAsync(mode));
-            bool found = result.Status == GattCommunicationStatus.Success && result.Services.Any(s => s.Uuid == service);
+            var uuids = result.Status == GattCommunicationStatus.Success ? result.Services.Select(s => s.Uuid).ToList() : null;
             foreach (var s in result.Services) s.Dispose();
-            return found;
+            return uuids;
         }
 
         // MARK: - helpers
@@ -440,8 +488,11 @@ namespace AirMouse
     static class Probe
     {
         static readonly TimeSpan Limit = TimeSpan.FromSeconds(90);
+        public const int Found = 0;
+        public const int NotFound = 1;
+        public const int Failed = 2;
 
-        /// in the parent: 0 found, 1 not found, 2 failed or timed out
+        /// in the parent: Found, NotFound, or Failed (also when it timed out)
         public static int Run(params string[] args)
         {
             var start = new ProcessStartInfo(Application.ExecutablePath, "--probe " + string.Join(" ", args))
@@ -460,7 +511,7 @@ namespace AirMouse
                 catch (InvalidOperationException)
                 {
                 }
-                return 2;
+                return Failed;
             }
         }
 
@@ -471,15 +522,15 @@ namespace AirMouse
             {
                 switch (args.Length > 1 ? args[1] : "")
                 {
-                    case "find": return Reconnector.Find() ? 0 : 1;
-                    case "refresh": return Reconnector.Refresh(Convert.ToUInt64(args[2], 16)) ? 0 : 1;
+                    case "find": return Reconnector.Find() ? Found : NotFound;
+                    case "refresh": return Reconnector.Refresh(Convert.ToUInt64(args[2], 16));
                 }
             }
             catch (Exception e)
             {
                 Reconnector.Log("probe " + string.Join(" ", args) + " failed: " + Reconnector.Describe(e));
             }
-            return 2;
+            return Failed;
         }
     }
 }
