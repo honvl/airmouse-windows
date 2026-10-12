@@ -3,22 +3,30 @@
 A small companion app for Windows PCs that use the AirMouse iPhone app as a Bluetooth mouse. It
 lives in the notification area and keeps the iPhone connected.
 
-**What it fixes.** AirMouse's mouse service only exists while the iPhone app is running. If the
-app restarts (an update, a force-quit, iOS closing it in the background), Windows sees the service
-disappear and removes its mouse. It then never connects to the phone again: the pairing stays,
-showing "iPhone, not connected", until it is removed and paired again. Macs and the Shield recover
-by themselves.
+**[Download the latest release](https://github.com/honvl/airmouse-windows/releases/latest)**
 
-**How.** It keeps a Bluetooth connection to the paired iPhone open
+## Why
+
+AirMouse turns an iPhone into a Bluetooth mouse and keyboard. Its mouse only exists while the
+iPhone app is running. When the app restarts (an update, swiping it away, iOS closing it in the
+background), Windows sees the mouse disappear. It then never connects to the phone again: the
+pairing stays, showing "iPhone, not connected", until you remove it and pair again. Macs recover on
+their own; Windows doesn't.
+
+AirMouse for Windows keeps a Bluetooth connection to the paired iPhone open
 (`GattSession.MaintainConnection`). That way Windows is still connected when the app comes back,
-and it picks up the app's services again. If it misses them, the helper re-reads the iPhone's
-services, which is all Windows needs to bring the mouse back. It finds the iPhone by AirMouse's
-companion link service. If a pairing has already gone stale, it connects to paired Apple devices
-and looks again. It backs off while the app is closed.
+and it picks up the mouse again. If it misses it, the companion re-reads the iPhone's services,
+which is all Windows needs. It finds the iPhone by AirMouse's companion link service. If a pairing
+has already gone stale, it connects to paired Apple devices and looks again. It backs off while the
+app is closed.
 
-## For users
+## Install
 
-Download `AirMouse.exe` and run it. It asks once, then installs for your account only, without
+Pair the PC with AirMouse first: on the iPhone, open AirMouse, tap the connection status at the
+top, then **Pair a new device**. On Windows, go to Settings > Bluetooth & devices > Add device >
+Bluetooth.
+
+Then download `AirMouse.exe` and run it. It asks once, then installs for your account only, without
 admin rights:
 
 - the app goes to `%LOCALAPPDATA%\Programs\AirMouse`
@@ -26,18 +34,19 @@ admin rights:
 - it appears in Start, and you remove it from Settings > Apps > Installed apps
 
 Its icon is bright while Windows has the mouse, and faded otherwise. Click it to see what's going on,
-reconnect, open Bluetooth settings, or read how to pair.
-
-Running it again updates an installed copy. For scripted installs:
+reconnect, open Bluetooth settings, or read how to pair. Running a newer `AirMouse.exe` updates
+it. For scripted installs:
 
 ```
 AirMouse.exe --quiet                 install or update, no questions
 AirMouse.exe --uninstall --quiet     remove
 ```
 
-Needs Windows 10 (1703 or later) or 11. It runs on the .NET Framework that comes with Windows.
+Needs Windows 10 (1703 or later) or Windows 11. It runs on the .NET Framework that comes with
+Windows. The exe isn't code-signed yet, so the first run shows SmartScreen's "Windows protected your
+PC": choose More info, then Run anyway.
 
-## Building
+## Build
 
 On Windows with the Windows 10/11 SDK installed (Visual Studio installs it):
 
@@ -45,9 +54,10 @@ On Windows with the Windows 10/11 SDK installed (Visual Studio installs it):
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-This writes `dist\AirMouse.exe`, using the C# compiler that ships in Windows. The icons in `assets`
-come from the iPhone app icon; to regenerate them, run `python3 windows/assets/make_icons.py` from
-the repo root.
+This writes `dist\AirMouse.exe`, using the C# compiler that ships in Windows. GitHub Actions builds
+every push, and publishes a release for each `v*` tag; the tag must match `Version` in
+`src/Program.cs`. The icons come from the iPhone app's icon via `assets/make_icons.py`.
 
-The exe isn't code-signed yet, so the first run from a download shows Windows SmartScreen's
-"Windows protected your PC" (More info > Run anyway).
+## License
+
+MIT

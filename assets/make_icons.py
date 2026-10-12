@@ -1,11 +1,15 @@
 """Builds the Windows icons from the iPhone app icon: AirMouse.ico (connected) and
-AirMouseIdle.ico (faded, for every other state). Run from the repo root."""
+AirMouseIdle.ico (faded, for every other state).
+
+    python3 assets/make_icons.py path/to/icon-1024.png
+"""
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageEnhance
 
-SOURCE = Path("ios/BTRemote/Assets.xcassets/AppIcon.appiconset/icon-1024.png")
-OUT = Path("windows/assets")
+SOURCE = Path(sys.argv[1])
+OUT = Path(__file__).parent
 SIZES = [(s, s) for s in (16, 20, 24, 32, 40, 48, 64, 128, 256)]
 
 art = Image.open(SOURCE).convert("RGBA")
