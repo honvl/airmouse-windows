@@ -71,8 +71,9 @@ namespace AirMouse
         static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
         /// a healthy copy runs on a couple of dozen threads; far past that, something is stuck
         const int MaxThreads = 150;
-        /// a one-sided pairing connects and drops about every 10 s, and its services never come
-        /// back; a phone walking off or AirMouse closing does neither
+        /// a one-sided pairing connects and drops every few seconds (every 10 s when the iPhone kept
+        /// an old pairing, every second or two when it forgot this PC), and its services can't be
+        /// read; a phone walking off or AirMouse closing does neither
         static readonly TimeSpan ChurnWindow = TimeSpan.FromMinutes(1);
         const int ChurnForOutOfSync = 6;
         const int UnreadableForOutOfSync = 3;
@@ -201,11 +202,16 @@ namespace AirMouse
 
             bool forced = refreshRequested;
             refreshRequested = false;
+            bool churning = Churning();
             if (changed)
             {
                 changed = false;
-                retry = FirstRetry;
-                nextRefresh = DateTime.Now + TimeSpan.FromSeconds(3);
+                // a link that keeps dropping changes every few seconds; the backoff still applies to it
+                if (!churning)
+                {
+                    retry = FirstRetry;
+                    nextRefresh = DateTime.Now + TimeSpan.FromSeconds(3);
+                }
             }
 
             // MaintainConnection reconnects on its own whenever the phone is in range
@@ -219,7 +225,9 @@ namespace AirMouse
                 Report(OutOfSync() ? LinkState.OutOfSync : LinkState.Away);
                 return;
             }
-            if (!forced && HasMouse(address))
+            // Windows keeps listing the mouse of a pairing the iPhone has dropped, so while the link
+            // keeps dropping only a read of the services says it's up
+            if (!forced && !churning && HasMouse(address))
             {
                 unreadable = 0;
                 Report(LinkState.Ready);
@@ -241,7 +249,12 @@ namespace AirMouse
         /// the link keeps dropping and the iPhone's services can't be read: see LinkState.OutOfSync
         bool OutOfSync()
         {
-            if (unreadable < UnreadableForOutOfSync) return false;
+            return unreadable >= UnreadableForOutOfSync && Churning();
+        }
+
+        /// the connection came and went several times in the last minute
+        bool Churning()
+        {
             lock (churn)
             {
                 while (churn.Count > 0 && DateTime.Now - churn.Peek() > ChurnWindow) churn.Dequeue();
