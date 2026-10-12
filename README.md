@@ -89,9 +89,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 This writes `dist\AirMouse.exe`, using the C# compiler that ships in Windows, and the Store package
 `dist\AirMouse.msix` (unpacked in `dist\msix`), using the SDK's makepri and makeappx. GitHub Actions
 builds every push and keeps both as artifacts, and publishes the exe as a release for each `v*` tag;
-the tag must match `Version` in `src/Program.cs`. The icons come from the iPhone app's icon via
-`assets/make_icons.py`, and the package's tile images from those icons via
-`assets/make_msix_assets.py`.
+the tag must match `Version` in `src/Program.cs`. The icons and the package's tile images come from
+the iPhone app's icon via `assets/make_icons.py`.
 
 ## License
 
